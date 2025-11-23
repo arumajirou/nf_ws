@@ -1,0 +1,7 @@
+def test_ts_research_store_has_get_metrics_for_experiment() -&gt; None:
+        store = TSResearchStore(DB_CONFIG)
+&gt;       fn = getattr(store, &quot;get_metrics_for_experiment&quot;)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: &#x27;TSResearchStore&#x27; object has no attribute &#x27;get_metrics_for_experiment&#x27;
+
+tests/test_ts_research_store_query_helper.py:17: AttributeError
