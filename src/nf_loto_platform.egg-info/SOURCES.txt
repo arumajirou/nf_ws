@@ -7,6 +7,7 @@ src/nf_loto_platform.egg-info/dependency_links.txt
 src/nf_loto_platform.egg-info/requires.txt
 src/nf_loto_platform.egg-info/top_level.txt
 src/nf_loto_platform/agents/__init__.py
+src/nf_loto_platform/agents/analyst_agent.py
 src/nf_loto_platform/agents/anomaly_agent.py
 src/nf_loto_platform/agents/causal_agent.py
 src/nf_loto_platform/agents/curator_agent.py
@@ -15,6 +16,8 @@ src/nf_loto_platform/agents/forecaster_agent.py
 src/nf_loto_platform/agents/llm_client.py
 src/nf_loto_platform/agents/orchestrator.py
 src/nf_loto_platform/agents/planner_agent.py
+src/nf_loto_platform/agents/rag_agent.py
+src/nf_loto_platform/agents/reflection_agent.py
 src/nf_loto_platform/agents/reporter_agent.py
 src/nf_loto_platform/agents/time_series_scientist_agent.py
 src/nf_loto_platform/agents/ts_research_orchestrator.py
@@ -41,6 +44,7 @@ src/nf_loto_platform/logging_ext/mlflow_logger.py
 src/nf_loto_platform/logging_ext/wandb_logger.py
 src/nf_loto_platform/ml/__init__.py
 src/nf_loto_platform/ml/automodel_builder.py
+src/nf_loto_platform/ml/conformal.py
 src/nf_loto_platform/ml/model_registry.py
 src/nf_loto_platform/ml/model_runner.py
 src/nf_loto_platform/ml/tslib_backend.py
@@ -62,8 +66,10 @@ src/nf_loto_platform/tsfm/__init__.py
 src/nf_loto_platform/tsfm/base.py
 src/nf_loto_platform/tsfm/chronos_adapter.py
 src/nf_loto_platform/tsfm/lag_llama_adapter.py
+src/nf_loto_platform/tsfm/moment_adapter.py
 src/nf_loto_platform/tsfm/registry.py
 src/nf_loto_platform/tsfm/tempo_pfn_adapter.py
+src/nf_loto_platform/tsfm/time_moe_adapter.py
 src/nf_loto_platform/tsfm/timesfm_adapter.py
 src/nf_loto_platform/webui/__init__.py
 tests/test_core_settings.py

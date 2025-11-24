@@ -29,6 +29,15 @@ def get_config_dir() -> Path:
     return BASE_DIR / "config"
 
 
+def get_config_path() -> Path:
+    """
+    設定ファイルディレクトリのパスを返す (互換性維持のためのエイリアス).
+    一部のモジュール(easytsf_runnerなど)がこの名前でインポートしているため、
+    get_config_dir へのエイリアスとして提供する。
+    """
+    return get_config_dir()
+
+
 def load_yaml(path: Path) -> Dict[str, Any]:
     """
     YAMLファイルを安全に読み込む。
