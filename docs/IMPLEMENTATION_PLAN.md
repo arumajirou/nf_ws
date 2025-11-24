@@ -1131,3 +1131,13 @@ if __name__ == "__main__":
 **作成日**: 2025-01-12  
 **バージョン**: 1.0.0  
 **作成者**: AI System Architect
+
+nf_loto_platform 実装計画書 (Reform Plan)0. 概要本ドキュメントは、nf_loto_platform の信頼性向上および機能完全化に向けた改修計画を定義する。リポジトリ監査 (2025/11) の結果に基づき、システムを「動作不能」な状態から「拡張可能な統合プラットフォーム」へと再生させることを目的とする。1. 全体ロードマップフェーズ目標優先度ステータスPhase 1: 動作安定化WebUI/CLIの起動、DB接続の安全化、コアAPIの整合性確保最高🟢 実装完了 (検証フェーズ)Phase 2: 機能補完TSFMアダプタの実装、Agent機能の修復、CLIランナーの整備高🟡 実装中 / 一部完了Phase 3: 品質・拡張テスト網羅率の向上、ドキュメント整備、WebUI機能拡張中⚪ 未着手2. 詳細タスクPhase 1: 動作安定化 (Stabilization)システムの基盤となる部分の不整合を解消し、エラーなく起動・実行できる状態にする。[x] セキュリティと設定管理の強化db_config.py のハードコードパスワードを削除。環境変数 (.env) および YAML から設定を読み込むロジック (core/settings.py) を実装。[x] WebUI の構造修正sys.path 操作を廃止し、nf_loto_platform パッケージ経由の正規インポートに統一。依存関係注入 (dependencies.py) の整理。[x] Core API 契約の修復model_runner.py: 実験結果 (meta) に評価メトリクス (metrics) を確実に含めるよう修正。forecaster_agent.py: model_runner 呼び出し時の引数不整合 (loss/metric) を修正。ts_research_orchestrator.py: メタデータ登録時の id_columns 引数渡し間違いを修正。Phase 2: 機能欠損の補完 (Functional Completion)設計上は存在するが実装が不足している ("NotImplemented" 等) コンポーネントを動作させる。[x] Anomaly Agent の実装to_rows メソッドを追加し、検知結果を DB (ts_research スキーマ) に保存可能な形式へ変換。[x] Scientist Agent の契約修正LLM クライアントの呼び出しを generate / complete メソッドに統一。[x] TSFM (Time Series Foundation Models) アダプタ実装base.py: 共通の入力検証・出力整形ロジックを実装。chronos_adapter.py: NotImplementedError を解消し、推論ロジック (初期は簡易実装/モック可) を記述。Next Step: Time-MoE, Lag-Llama 等、他のモデルアダプタの順次実装。[x] EasyTSF CLI ランナーの整備easytsf_runner.py: AgentOrchestrator の初期化フローを修正し、設定ファイルから CLI 実行を可能にする。Phase 3: 品質向上と機能拡張 (Enhancement)安定稼働後のユーザビリティ向上と、研究開発用プラットフォームとしての価値を高める。3.1 テストと検証[ ] 統合テスト (Integration Tests)tests/integration/ 配下のテストを拡充。実際の DB (Docker PostgreSQL) を用いた Agent → Runner → DB の一気通貫テスト。[ ] E2E テストpytest-streamlit 等を用いた WebUI のスモークテスト。EasyTSF CLI の実行テスト。3.2 WebUI 機能拡張[ ] 実験比較ビュー: 複数の run_id を選択し、メトリクスや予測グラフを重ねて比較する機能。[ ] Agent 思考ログの可視化: AgentOrchestrator の各ステップ (Plan, Critique) をタイムライン表示。[ ] インタラクティブな特徴量分析: AnalystAgent のレポートに基づき、相関行列や季節性分解を動的にプロット。3.3 高度な分析機能[ ] RAG (Retrieval Augmented Generation) の強化: ベクトル DB (pgvector) を用いた、類似時系列パターンの検索精度向上。[ ] Causal Analysis: CausalAgent の出力を利用した因果グラフの可視化。3. 開発・デプロイフローLocal Setup:python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+cp config/db.yaml.template config/db.yaml  # 編集して接続情報を設定
+Lint & Format:black src apps tests
+isort src apps tests
+mypy src
+Testing:pytest tests/
+Migration:SQL ファイル (sql/) を用いて DB スキーマを更新。(将来的には Alembic 等のマイグレーションツール導入を検討)4. 既知の課題 (Known Issues)TSFM モデルの依存関係: transformers, torch などのバージョン依存が厳しいため、pyproject.toml の optional dependencies で管理することを推奨。LLM コスト: Scientist Agent が大量のトークンを消費する可能性があるため、トークン使用量のモニタリングが必要。

@@ -60,7 +60,16 @@ class TimeSeriesScientistAgent:
         # LLM へのプロンプト生成は、まずは単純なテキストで十分
         system_prompt = "You are an analytical scientist that summarizes time-series experiments."
         user_prompt = f"Analyze time series experiment {experiment_id} given metrics: {metrics_rows}"
-        llm_response = self._llm.generate(system_prompt=system_prompt, user_prompt=user_prompt)
+        
+        # BaseLLMClient の generate メソッドを使用する
+        # 引数名やシグネチャは実際の LLMClient の仕様に合わせる必要があるが、
+        # 多くの実装では system_prompt, user_prompt を取る。
+        if hasattr(self._llm, "generate"):
+            llm_response = self._llm.generate(system_prompt=system_prompt, user_prompt=user_prompt)
+        elif hasattr(self._llm, "complete"): # 互換性のため残す場合
+             llm_response = self._llm.complete(prompt=f"{system_prompt}\n\n{user_prompt}")
+        else:
+            llm_response = "LLM Client interface not supported."
 
         # ここでは LLM 応答のうち summary だけを使い、trial 提案は空で返す
         # （将来の拡張ポイントとする）
@@ -71,9 +80,17 @@ class TimeSeriesScientistAgent:
         all_metrics = {}
         for exp_id in experiment_ids:
             all_metrics[exp_id] = self._fetch_metrics_for_experiment(exp_id)
+        
         system_prompt = "You are an analytical scientist that compares experiments."
         user_prompt = f"Compare multiple time series experiments given metrics: {all_metrics}"
-        llm_response = self._llm.generate(system_prompt=system_prompt, user_prompt=user_prompt)
+        
+        if hasattr(self._llm, "generate"):
+            llm_response = self._llm.generate(system_prompt=system_prompt, user_prompt=user_prompt)
+        elif hasattr(self._llm, "complete"):
+             llm_response = self._llm.complete(prompt=f"{system_prompt}\n\n{user_prompt}")
+        else:
+            llm_response = "LLM Client interface not supported."
+            
         return ScientistReport(summary_markdown=llm_response, recommended_trials=[])
 
     def suggest_next_trials(self, experiment_id: int) -> List[TrialSuggestion]:

@@ -16,6 +16,7 @@ import pandas as pd
 
 @dataclass
 class AnomalyRecord:
+    """異常検知結果を保持するデータクラス."""
     ts: Any
     series_id: str
     score: float

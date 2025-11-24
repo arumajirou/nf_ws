@@ -10,14 +10,17 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 import pandas as pd
 import altair as alt
+import streamlit as st
 
 # --- Project Imports ---
+# sys.path 操作を排除し、インストール済みパッケージとしてインポートする
 from nf_loto_platform.apps.dependencies import get_db_conn, get_model_runner
 from nf_loto_platform.core.settings import load_db_config
 from nf_loto_platform.db import loto_repository
 from nf_loto_platform.ml.model_registry import list_automodel_names, get_model_spec
 
 # New Agent Orchestrator
+# 依存関係が解決できない場合でもWebUI自体は落ちないようにする
 try:
     from nf_loto_platform.agents.orchestrator import AgentOrchestrator
 except ImportError:
@@ -75,7 +78,6 @@ def _fetch_dataframe(loader: Callable[[], pd.DataFrame], columns: Sequence[str])
 
 def _plot_forecast(df_preds: pd.DataFrame, title: str = "Forecast Results"):
     """Altairを使用して予測結果と信頼区間をプロットする."""
-    import streamlit as st
     
     if df_preds.empty:
         st.warning("No prediction data to plot.")
@@ -150,7 +152,11 @@ def _plot_forecast(df_preds: pd.DataFrame, title: str = "Forecast Results"):
 def render_app(st_module=None, deps: WebUIDependencies | None = None) -> None:
     """Render the Streamlit application."""
 
-    st = st_module or __import__("streamlit")
+    # 外部からモジュールを注入可能にする（テスト用）
+    if st_module:
+        global st
+        st = st_module
+    
     deps = deps or build_webui_dependencies()
 
     repo = deps.repo
@@ -163,7 +169,9 @@ def render_app(st_module=None, deps: WebUIDependencies | None = None) -> None:
     st.sidebar.caption("v2.0.0 (Agent & TSFM Supported)")
     
     st.sidebar.subheader("DB Connection")
-    st.sidebar.json(deps.db_config or {"message": "Please configure config/db.yaml"})
+    # DBパスワードなど機密情報はマスクして表示するのが望ましいが、ここではconfigの内容を確認用に表示
+    safe_config = {k: v if k != 'password' else '******' for k, v in deps.db_config.items()}
+    st.sidebar.json(safe_config or {"message": "Please configure config/db.yaml"})
 
     # Tabs
     tab_run, tab_agent, tab_history = st.tabs([
@@ -260,7 +268,9 @@ def render_app(st_module=None, deps: WebUIDependencies | None = None) -> None:
                         u_score = meta.get("uncertainty_score", 0.0)
                         
                         m1, m2, m3 = st.columns(3)
-                        m1.metric("MAE", f"{metrics.get('mae', 0):.4f}")
+                        # metricsがNoneの場合のガード
+                        mae_val = metrics.get('mae', 0) if metrics else 0
+                        m1.metric("MAE", f"{mae_val:.4f}")
                         m2.metric("Time (s)", f"{meta.get('duration_seconds', 0):.2f}")
                         m3.metric("Uncertainty Score", f"{u_score:.4f}")
                         

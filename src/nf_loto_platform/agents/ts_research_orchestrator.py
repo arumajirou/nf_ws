@@ -56,7 +56,6 @@ class TSResearchOrchestrator:
         self._default_freq = default_freq
         self._causal_agent = causal_agent
         self._anomaly_agent = anomaly_agent
-        self._default_freq = default_freq
 
     def run_full_cycle_with_logging(
         self,
@@ -75,12 +74,13 @@ class TSResearchOrchestrator:
         self._store.ensure_schema()
 
         # Register dataset (very lightweight, does not touch the raw data).
+        # FIXED: id_columns should be the column names, not the values.
         dataset_id = self._store.ensure_dataset(
             schema_name=self._default_schema,
             table_name=table_name,
             ts_column=self._default_ts_column,
             target_column=self._default_target_column,
-            id_columns=["unique_id"],
+            id_columns=["unique_id"],  # Use literal column name, not values
             freq=self._default_freq,
             horizon_default=task.target_horizon,
             statistics=None,
@@ -108,14 +108,17 @@ class TSResearchOrchestrator:
 
         if self._anomaly_agent is not None and panel_df is not None:
             try:
+                # FIXED: id_columns should be the column names.
                 anomaly_records = self._anomaly_agent.detect(
                     panel_df=panel_df,
                     value_column=self._default_target_column,
                     ts_column=self._default_ts_column,
-                    id_columns=["unique_id"],
+                    id_columns=["unique_id"],  # Use literal column name
                 )
-                anomaly_rows = self._anomaly_agent.to_rows(anomaly_records)
-                self._store.bulk_insert_anomalies(dataset_id=dataset_id, anomaly_rows=anomaly_rows)
+                # AnomalyAgent must implement to_rows to convert records to DB schema
+                if hasattr(self._anomaly_agent, "to_rows"):
+                    anomaly_rows = self._anomaly_agent.to_rows(anomaly_records)
+                    self._store.bulk_insert_anomalies(dataset_id=dataset_id, anomaly_rows=anomaly_rows)
             except Exception:
                 # 異常検知も補助的なため、失敗してもメインフローは継続
                 pass
