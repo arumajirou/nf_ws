@@ -71,7 +71,34 @@ CREATE TABLE IF NOT EXISTS nf_reports (
 );
 """
 
+DDL_AGENT_RAG_EXTENSION = """
+-- Agent, RAG, and Uncertainty Quantification extensions for nf_model_runs
+
+ALTER TABLE nf_model_runs
+ADD COLUMN IF NOT EXISTS agent_reasoning TEXT,
+ADD COLUMN IF NOT EXISTS agent_metadata JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS rag_context_ids TEXT[],
+ADD COLUMN IF NOT EXISTS rag_metadata JSONB DEFAULT '{}'::jsonb,
+ADD COLUMN IF NOT EXISTS uncertainty_score DOUBLE PRECISION,
+ADD COLUMN IF NOT EXISTS uncertainty_metrics JSONB DEFAULT '{}'::jsonb;
+
+COMMENT ON COLUMN nf_model_runs.agent_reasoning IS 'AIエージェントによる分析・思考プロセスのテキストログ（CoT: Chain of Thought）';
+COMMENT ON COLUMN nf_model_runs.agent_metadata IS '各エージェント(Analyst, Planner, Reflection)の構造化された分析レポート';
+COMMENT ON COLUMN nf_model_runs.rag_context_ids IS 'RAGプロセスによりコンテキストとして注入された過去データのユニークIDリスト';
+COMMENT ON COLUMN nf_model_runs.rag_metadata IS 'RAG検索の実行メタデータ（類似度スコア、検索パラメータ等）';
+COMMENT ON COLUMN nf_model_runs.uncertainty_score IS 'モデルの不確実性を示す単一スコア（値が大きいほど予測困難）';
+COMMENT ON COLUMN nf_model_runs.uncertainty_metrics IS 'Conformal Predictionの実測カバレッジ率や区間幅などの詳細指標';
+
+CREATE INDEX IF NOT EXISTS idx_nf_model_runs_agent_metadata ON nf_model_runs USING gin (agent_metadata);
+CREATE INDEX IF NOT EXISTS idx_nf_model_runs_uncertainty_metrics ON nf_model_runs USING gin (uncertainty_metrics);
+"""
+
 
 def get_extend_metadata_ddl() -> str:
     """Return the SQL DDL used to create all metadata tables."""
     return DDL_EXTEND_METADATA_TABLES
+
+
+def get_agent_rag_extension_ddl() -> str:
+    """Return the SQL DDL for Agent/RAG extensions."""
+    return DDL_AGENT_RAG_EXTENSION

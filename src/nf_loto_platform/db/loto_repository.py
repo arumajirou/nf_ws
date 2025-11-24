@@ -13,8 +13,9 @@ PostgreSQL 上の nf_loto% テーブルにアクセスするためのユーテ�
 from __future__ import annotations
 
 import re
-from typing import Iterable, Sequence
+from typing import Iterable, Sequence, List, Dict, Any, Optional
 
+import numpy as np
 import pandas as pd
 import psycopg2
 
@@ -84,9 +85,9 @@ def load_panel_by_loto(
         - ds
         - y
         - その他の列:
-            - hist_*  : 過去のみ既知の外生
-            - stat_*  : 静的外生
-            - futr_*  : 未来まで既知の外生
+            - hist_* : 過去のみ既知の外生
+            - stat_* : 静的外生
+            - futr_* : 未来まで既知の外生
     """
     table_name = _validate_table_name(table_name)
     if not unique_ids:
@@ -112,3 +113,97 @@ def load_panel_by_loto(
         raise ValueError(f"必要なカラムが不足しています: {missing}")
 
     return df
+
+
+def search_similar_patterns(
+    table_name: str,
+    loto: str,
+    unique_id: str,
+    query_seq: Sequence[float],
+    top_k: int = 5,
+) -> pd.DataFrame:
+    """指定された系列の過去データから、query_seq に類似した波形パターンを検索する (RAG用)。
+
+    単純なユークリッド距離に基づく類似度検索を行い、
+    「類似した過去の状況」と「その直後に何が起きたか」を特定する。
+
+    Args:
+        table_name: 検索対象のテーブル名
+        loto: ロト種別
+        unique_id: 検索対象の系列ID
+        query_seq: 直近の観測値リスト (検索クエリ)。この長さ(N)と同じ長さの過去窓を検索する。
+        top_k: 返却する類似パターンの数
+
+    Returns:
+        pd.DataFrame: 以下のカラムを持つデータフレーム (類似度順)
+            - ds: パターン終了日の日付
+            - similarity: 類似度スコア (0.0-1.0, 1.0が完全一致)
+            - next_val: そのパターンの直後の値 (予測のヒント)
+            - window_values: マッチした区間の値リスト
+    """
+    # 1. 履歴データの取得 (yのみで可)
+    table_name = _validate_table_name(table_name)
+    query = f"""
+        SELECT ds, y
+        FROM {table_name}
+        WHERE loto = %s
+          AND unique_id = %s
+        ORDER BY ds ASC
+    """
+    
+    with get_connection() as conn:
+        df_hist = pd.read_sql(query, conn, params=[loto, unique_id])
+    
+    if df_hist.empty:
+        return pd.DataFrame(columns=["ds", "similarity", "next_val", "window_values"])
+    
+    # 2. スライディングウィンドウによる検索 (Python側で実行)
+    # Note: データ量が膨大な場合は pgvector 等の利用を検討すべきだが、
+    # ロト/ナンバーズ程度のデータ量(数千~数万行)であれば numpy で十分高速。
+    
+    y_hist = df_hist["y"].to_numpy(dtype=float)
+    ds_hist = df_hist["ds"].to_numpy()
+    
+    q_len = len(query_seq)
+    q_vec = np.array(query_seq, dtype=float)
+    
+    if len(y_hist) < q_len + 1:
+        # データ不足
+        return pd.DataFrame(columns=["ds", "similarity", "next_val", "window_values"])
+
+    results = []
+    
+    # 履歴を走査 (未来の値を1つ確保するため -1)
+    # query_seq 自身が含まれている場合(直近データ)、それは検索結果から除外すべきだが、
+    # ここでは単純に全走査し、後処理でフィルタリングするか、呼び出し側で判断する。
+    # 今回は学習データとしての利用を想定し、予測対象時点(未来)を含まない範囲をスキャン。
+    
+    for i in range(len(y_hist) - q_len):
+        # ウィンドウ切り出し
+        window = y_hist[i : i + q_len]
+        next_val = y_hist[i + q_len]
+        match_date = ds_hist[i + q_len - 1] # パターン終了日
+        
+        # 距離計算 (Euclidean Distance)
+        dist = np.linalg.norm(window - q_vec)
+        
+        # 類似度へ変換 (距離0 -> 1.0, 距離大 -> 0.0)
+        # 正規化定数はデータのスケールに依存するが、簡易的に 1 / (1 + dist) を使用
+        similarity = 1.0 / (1.0 + dist)
+        
+        results.append({
+            "ds": match_date,
+            "similarity": similarity,
+            "next_val": next_val,
+            "window_values": window.tolist()
+        })
+    
+    # 3. 結果の整形とソート
+    df_res = pd.DataFrame(results)
+    if df_res.empty:
+        return df_res
+        
+    # 類似度が高い順にソート
+    df_res = df_res.sort_values("similarity", ascending=False).head(top_k)
+    
+    return df_res.reset_index(drop=True)

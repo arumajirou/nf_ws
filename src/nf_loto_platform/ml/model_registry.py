@@ -1,11 +1,11 @@
 """
-NeuralForecast AutoModel のレジストリ（TSFM統合版）。
+NeuralForecast AutoModel のレジストリ（TSFM拡張版）。
 モデルごとの外生変数サポート (F/H/S) をここで定義しておき、
 UI からの選択や自動検証で利用できるようにする。
 
 TSFM統合により以下を拡張:
 - AutoModelSpec に engine_kind, engine_name, is_zero_shot 等のフィールド追加
-- Chronos2-ZeroShot, TimeGPT-ZeroShot, TempoPFN-ZeroShot エントリ追加
+- Chronos2, TimeGPT, TempoPFN に加え、Time-MoE, MOMENT エントリを追加
 """
 
 from __future__ import annotations
@@ -40,9 +40,9 @@ class AutoModelSpec:
     forecast_type: str       # "direct" / "recursive" / "both"
     exogenous: ExogenousSupport
     
-    # ⭐ TSFM統合による新規フィールド（デフォルト値で既存コードとの互換性を保つ）
+    # ⭐ TSFM統合による新規フィールド
     engine_kind: str = "neuralforecast"  # "neuralforecast" | "tsfm"
-    engine_name: Optional[str] = None    # "chronos2" | "timegpt" | "tempopfn"
+    engine_name: Optional[str] = None    # "chronos2" | "timegpt" | "tempopfn" | "time_moe" | "moment"
     is_zero_shot: bool = False           # ゼロショット予測モデルか
     requires_api_key: bool = False       # API キーが必要か（TimeGPT等）
     context_length: Optional[int] = None # コンテキスト長（TSFMで使用）
@@ -139,9 +139,10 @@ AUTO_MODEL_REGISTRY: Dict[str, AutoModelSpec] = {
     ),
     
     # ========================================================================
-    # TSFM Models（新規追加）
+    # TSFM Models（拡張）
     # ========================================================================
     
+    # --- Chronos ---
     "Chronos2-ZeroShot": AutoModelSpec(
         name="Chronos2-ZeroShot",
         family="TSFM",
@@ -149,17 +150,18 @@ AUTO_MODEL_REGISTRY: Dict[str, AutoModelSpec] = {
         multivariate=True,
         forecast_type="direct",
         exogenous=ExogenousSupport(
-            futr=False,  # Chronos2は基本的に外生変数サポートなし
-            hist=True,   # 履歴データは使用
+            futr=False,
+            hist=True,
             stat=False,
         ),
         engine_kind="tsfm",
         engine_name="chronos2",
         is_zero_shot=True,
         requires_api_key=False,
-        context_length=512,  # Chronos2のデフォルトコンテキスト長
+        context_length=512,
     ),
     
+    # --- TimeGPT (Nixtla) ---
     "TimeGPT-ZeroShot": AutoModelSpec(
         name="TimeGPT-ZeroShot",
         family="TSFM",
@@ -167,17 +169,18 @@ AUTO_MODEL_REGISTRY: Dict[str, AutoModelSpec] = {
         multivariate=True,
         forecast_type="direct",
         exogenous=ExogenousSupport(
-            futr=True,   # TimeGPTは外生変数サポート
+            futr=True,
             hist=True,
             stat=False,
         ),
         engine_kind="tsfm",
         engine_name="timegpt",
         is_zero_shot=True,
-        requires_api_key=True,  # ⭐ API キー必須
-        context_length=None,    # API側で自動管理
+        requires_api_key=True,
+        context_length=None,
     ),
     
+    # --- TempoPFN ---
     "TempoPFN-ZeroShot": AutoModelSpec(
         name="TempoPFN-ZeroShot",
         family="TSFM",
@@ -193,7 +196,63 @@ AUTO_MODEL_REGISTRY: Dict[str, AutoModelSpec] = {
         engine_name="tempopfn",
         is_zero_shot=True,
         requires_api_key=False,
-        context_length=256,  # TempoPFNのデフォルトコンテキスト長
+        context_length=256,
+    ),
+
+    # --- [New] Time-MoE (Mixture of Experts) ---
+    "Time-MoE-50M": AutoModelSpec(
+        name="Time-MoE-50M",
+        family="TSFM",
+        univariate=True,
+        multivariate=True,
+        forecast_type="direct",
+        exogenous=ExogenousSupport(
+            futr=False,
+            hist=True,
+            stat=False,
+        ),
+        engine_kind="tsfm",
+        engine_name="time_moe",
+        is_zero_shot=True,
+        requires_api_key=False,
+        context_length=512,
+    ),
+
+    "Time-MoE-2.4B": AutoModelSpec(
+        name="Time-MoE-2.4B",
+        family="TSFM",
+        univariate=True,
+        multivariate=True,
+        forecast_type="direct",
+        exogenous=ExogenousSupport(
+            futr=False,
+            hist=True,
+            stat=False,
+        ),
+        engine_kind="tsfm",
+        engine_name="time_moe",
+        is_zero_shot=True,
+        requires_api_key=False,
+        context_length=2048, # より長いコンテキストを扱える
+    ),
+
+    # --- [New] MOMENT (Multi-domain) ---
+    "MOMENT-Large": AutoModelSpec(
+        name="MOMENT-Large",
+        family="TSFM",
+        univariate=True,
+        multivariate=True,
+        forecast_type="direct",
+        exogenous=ExogenousSupport(
+            futr=False,
+            hist=True,
+            stat=False,
+        ),
+        engine_kind="tsfm",
+        engine_name="moment",
+        is_zero_shot=True,
+        requires_api_key=False,
+        context_length=512,
     ),
 }
 
@@ -203,26 +262,12 @@ AUTO_MODEL_REGISTRY: Dict[str, AutoModelSpec] = {
 # ============================================================================
 
 def list_automodel_names() -> List[str]:
-    """UI 用のモデル名一覧を返す（ソート済み）.
-    
-    TSFM統合後も既存のコードとの互換性を保つため、
-    この関数は既存どおりレジストリのキーをソートして返す。
-    
-    Returns:
-        モデル名のリスト（例: ["AutoTFT", "Chronos2-ZeroShot", ...]）
-    """
+    """UI 用のモデル名一覧を返す（ソート済み）."""
     return sorted(AUTO_MODEL_REGISTRY.keys())
 
 
 def get_model_spec(model_name: str) -> Optional[AutoModelSpec]:
-    """指定されたモデル名のAutoModelSpecを取得する.
-    
-    Args:
-        model_name: モデル名（例: "AutoTFT", "Chronos2-ZeroShot"）
-    
-    Returns:
-        AutoModelSpecインスタンス、存在しない場合はNone
-    """
+    """指定されたモデル名のAutoModelSpecを取得する."""
     return AUTO_MODEL_REGISTRY.get(model_name)
 
 
@@ -234,33 +279,20 @@ def validate_model_spec(spec: AutoModelSpec) -> None:
     
     Raises:
         ValueError: 不正な組み合わせが検出された場合
-    
-    Examples:
-        >>> spec = get_model_spec("Chronos2-ZeroShot")
-        >>> validate_model_spec(spec)  # エラーなし
-        
-        >>> bad_spec = AutoModelSpec(
-        ...     name="BadModel",
-        ...     family="TSFM",
-        ...     engine_kind="tsfm",
-        ...     engine_name=None,  # ← エラー
-        ...     # ... その他のフィールド ...
-        ... )
-        >>> validate_model_spec(bad_spec)  # ValueError発生
     """
     if spec.engine_kind == "tsfm":
-        # TSFM の場合、engine_name は必須
         if spec.engine_name is None:
             raise ValueError(
                 f"TSFM model '{spec.name}' must specify engine_name. "
-                f"Valid values: chronos2, timegpt, tempopfn"
             )
         
-        # engine_name の値チェック
-        valid_engines = {"chronos2", "timegpt", "tempopfn"}
+        # 有効なTSFMエンジン名のリスト
+        valid_engines = {
+            "chronos2", "timegpt", "tempopfn",
+            "time_moe", "moment"  # [New] 追加されたエンジン
+        }
+        
         if spec.engine_name not in valid_engines:
-            # テストでは "Invalid engine_name for TSFM model" という文言をチェックしている。
-            # 既存の詳細情報も維持しつつ、プレフィックスとしてこのフレーズを含める。
             raise ValueError(
                 "Invalid engine_name for TSFM model: "
                 f"Unknown TSFM engine_name: '{spec.engine_name}' for model '{spec.name}'. "
@@ -275,7 +307,6 @@ def validate_model_spec(spec: AutoModelSpec) -> None:
             )
     
     elif spec.engine_kind == "neuralforecast":
-        # NeuralForecas�� の場合、engine_name は None であるべき
         if spec.engine_name is not None:
             raise ValueError(
                 f"NeuralForecast model '{spec.name}' should not specify engine_name. "
@@ -290,11 +321,7 @@ def validate_model_spec(spec: AutoModelSpec) -> None:
 
 
 def list_tsfm_models() -> List[str]:
-    """TSFMモデルのみのリストを返す（ソート済み）.
-    
-    Returns:
-        TSFMモデル名のリスト（例: ["Chronos2-ZeroShot", "TimeGPT-ZeroShot", ...]）
-    """
+    """TSFMモデルのみのリストを返す（ソート済み）."""
     return sorted([
         name for name, spec in AUTO_MODEL_REGISTRY.items()
         if spec.engine_kind == "tsfm"
@@ -302,11 +329,7 @@ def list_tsfm_models() -> List[str]:
 
 
 def list_neuralforecast_models() -> List[str]:
-    """NeuralForecast AutoModelのみのリストを返す（ソート済み）.
-    
-    Returns:
-        NeuralForecastモデル名のリスト（例: ["AutoTFT", "AutoNHITS", ...]）
-    """
+    """NeuralForecast AutoModelのみのリストを返す（ソート済み）."""
     return sorted([
         name for name, spec in AUTO_MODEL_REGISTRY.items()
         if spec.engine_kind == "neuralforecast"
@@ -318,25 +341,8 @@ def get_models_by_exogenous_support(
     hist: Optional[bool] = None,
     stat: Optional[bool] = None,
 ) -> List[str]:
-    """外生変数サポート条件でモデルをフィルタリング.
-    
-    Args:
-        futr: 未来既知変数のサポート（True: 必要, False: 不要, None: 問わない）
-        hist: 履歴変数のサポート（True: 必要, False: 不要, None: 問わない）
-        stat: 静的変数のサポート（True: 必要, False: 不要, None: 問わない）
-    
-    Returns:
-        条件に合致するモデル名のリスト
-    
-    Examples:
-        >>> # 未来既知変数をサポートするモデルのみ
-        >>> models = get_models_by_exogenous_support(futr=True)
-        
-        >>> # 外生変数を一切使わないモデルのみ
-        >>> models = get_models_by_exogenous_support(futr=False, hist=False, stat=False)
-    """
+    """外生変数サポート条件でモデルをフィルタリング."""
     results = []
-    
     for name, spec in AUTO_MODEL_REGISTRY.items():
         if futr is not None and spec.exogenous.futr != futr:
             continue
@@ -354,10 +360,7 @@ def get_models_by_exogenous_support(
 # ============================================================================
 
 def _validate_registry_at_module_load() -> None:
-    """モジュールロード時にレジストリ全体の整合性をチェック.
-    
-    不正なエントリがあればValueErrorを発生させる。
-    """
+    """モジュールロード時にレジストリ全体の整合性をチェック."""
     for name, spec in AUTO_MODEL_REGISTRY.items():
         try:
             validate_model_spec(spec)
@@ -367,5 +370,4 @@ def _validate_registry_at_module_load() -> None:
             ) from e
 
 
-# モジュールロード時にバリデーション実行
 _validate_registry_at_module_load()
