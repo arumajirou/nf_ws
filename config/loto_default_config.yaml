@@ -10,7 +10,8 @@ database:
   port: "${DB_PORT:5432}"
   database: "${DB_NAME:postgres}"
   user: "${DB_USER:postgres}"
-  password: "${DB_PASSWORD:z}"
+  # ハードコードされたパスワード "z" を削除し、環境変数必須の形式へ変更
+  password: "${DB_PASSWORD}"
   
   # 接続プール
   pool_size: 10

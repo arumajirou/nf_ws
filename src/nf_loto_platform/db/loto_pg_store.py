@@ -1,4 +1,3 @@
-
 # df_final を PostgreSQL に保存し、高速な CRUD を提供するモジュール
 from typing import Optional, List, Tuple
 import pandas as pd
@@ -15,27 +14,8 @@ COLS = [
     "N4NU","N4PM","N5NU","N5PM","N6NU","N6PM","N7NU","N7PM",
 ]
 
-CREATE_SQL = f"""
-CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-    loto        TEXT        NOT NULL,
-    num         BIGINT      NOT NULL,
-    ds          TIMESTAMP   NOT NULL,
-    unique_id   TEXT        NOT NULL,
-    y           BIGINT      NOT NULL,
-    CO          BIGINT      NOT NULL,
-    N1NU        BIGINT,  N1PM BIGINT,
-    N2NU        BIGINT,  N2PM BIGINT,
-    N3NU        BIGINT,  N3PM BIGINT,
-    N4NU        BIGINT,  N4PM BIGINT,
-    N5NU        BIGINT,  N5PM BIGINT,
-    N6NU        BIGINT,  N6PM BIGINT,
-    N7NU        BIGINT,  N7PM BIGINT,
-    PRIMARY KEY (loto, num, unique_id)
-);
-CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_ds         ON {TABLE_NAME}(ds);
-CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_loto_ds    ON {TABLE_NAME}(loto, ds);
-CREATE INDEX IF NOT EXISTS idx_{TABLE_NAME}_loto_num   ON {TABLE_NAME}(loto, num);
-"""
+# Note: DDL (CREATE TABLE) は sql/005_create_loto_data_tables.sql に移動しました。
+# アプリケーションコード内でのスキーマ変更は行いません。
 
 UPSERT_SQL_TEMPLATE = f"""
     INSERT INTO {TABLE_NAME} ({', '.join(COLS)})
@@ -49,30 +29,6 @@ UPSERT_SQL_TEMPLATE = f"""
 
 def _connect():
     return psycopg2.connect(**DB_CONFIG)
-
-def ensure_table():
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(CREATE_SQL)
-        conn.commit()
-
-def migrate_to_bigint():
-    """既存テーブルの数値列が INTEGER の場合は BIGINT にマイグレーション"""
-    integer_cols = []
-    qry = f"""
-        SELECT column_name, data_type
-        FROM information_schema.columns
-        WHERE table_name = %s
-    """
-    with _connect() as conn, conn.cursor() as cur:
-        cur.execute(qry, (TABLE_NAME.split('.')[-1],))
-        for col, dtype in cur.fetchall():
-            if dtype == 'integer' and col not in ('ds', 'loto', 'unique_id'):
-                integer_cols.append(col)
-
-        if integer_cols:
-            for col in integer_cols:
-                cur.execute(f"ALTER TABLE {TABLE_NAME} ALTER COLUMN {col} TYPE BIGINT USING {col}::bigint;")
-            conn.commit()
 
 def _prepare_rows(df: pd.DataFrame) -> List[Tuple]:
     data = df.copy()
@@ -95,12 +51,18 @@ def _prepare_rows(df: pd.DataFrame) -> List[Tuple]:
     return [tuple(row[c] for c in COLS) for _, row in data.iterrows()]
 
 def upsert_df(df: pd.DataFrame, batch_size: int = 5000):
+    """
+    データフレームをDBにUPSERTする。
+    
+    Note:
+        テーブルが存在しない場合、この関数は psycopg2.errors.UndefinedTable エラーを発生させます。
+        事前に sql/ ディレクトリ内のマイグレーションスクリプトを実行してください。
+    """
     if df.empty:
         return 0
-    ensure_table()
-    # 既存テーブルの型を確認・必要ならBIGINTに変更
-    migrate_to_bigint()
-
+    
+    # DDL操作（ensure_table, migrate_to_bigint）は廃止
+    
     rows = _prepare_rows(df)
     with _connect() as conn, conn.cursor() as cur:
         for i in range(0, len(rows), batch_size):

@@ -1,75 +1,44 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence
-
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class TimeSeriesTaskSpec:
-    """時系列タスクの高レベル仕様.
-
-    エージェント層が、人間の要求や UI 入力を正規化したもの。
-    ここではロト用に最低限必要なものだけを持たせている。
-    """
-
-    loto_kind: str  # "loto6" / "loto7" / "miniloto" など
-    target_horizon: int  # 先何ステップ (週) まで予測したいか
-    frequency: str = "W"  # pandas オフセットエイリアス
-    objective_metric: str = "mae"
+    """時系列予測タスクの要件定義."""
+    target_horizon: int
+    max_training_time_minutes: Optional[int] = None
     allow_tsfm: bool = True
     allow_neuralforecast: bool = True
-    allow_classical: bool = False
-    max_training_time_minutes: Optional[float] = None
-    mode: str = "auto"  # "auto" / "suggestion_only" など
-    notes: str = ""
-
+    allow_classical: bool = True
 
 @dataclass
 class CuratorOutput:
-    """CuratorAgent が出力するデータ診断・前処理プラン."""
-
-    recommended_h: int
-    recommended_validation_scheme: str
-    candidate_feature_sets: List[str]
-    data_profile: Mapping[str, Any] = field(default_factory=dict)
-    messages: List[str] = field(default_factory=list)
-
+    """データ分析・キュレーション結果."""
+    dataset_properties: Dict[str, Any] = field(default_factory=dict)
+    recommended_validation_scheme: str = "holdout"
+    candidate_feature_sets: List[str] = field(default_factory=list)
 
 @dataclass
 class ExperimentRecipe:
-    """PlannerAgent が組み立てる実験レシピ.
-
-    ForecasterAgent から見れば、この情報だけで
-    sweep_loto_experiments を呼び出せる。
-    """
-
+    """実験実行レシピ (Plannerの出力)."""
     models: List[str]
     feature_sets: List[str]
-    search_backend: str = "local"  # "local" / "optuna" / "ray"
-    num_samples: int = 1
-    time_budget_hours: Optional[float] = None
-    use_tsfm: bool = True
-    use_neuralforecast: bool = True
-    use_classical: bool = False
+    search_backend: str
+    num_samples: int
+    time_budget_hours: Optional[float]
+    use_tsfm: bool
+    use_neuralforecast: bool
+    use_classical: bool
     extra_params: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class ExperimentOutcome:
-    """ForecasterAgent が返す実験結果の要約."""
-
-    best_model_name: str
-    metrics: Mapping[str, float]
-    all_model_metrics: Mapping[str, Mapping[str, float]]
-    run_ids: Sequence[str]
-    meta: Mapping[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class AgentReport:
-    """ReporterAgent が生成したレポート."""
-
-    summary: str
-    details_markdown: str
-    recommended_actions: List[str] = field(default_factory=list)
-    artifacts: Dict[str, str] = field(default_factory=dict)
+    
+    # 互換性のため辞書化メソッドを提供
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "model_name": self.models[0] if self.models else "AutoNHITS",
+            "backend": self.search_backend,
+            "num_samples": self.num_samples,
+            "model_params": self.extra_params
+        }
+    
+    # 辞書のようにアクセスできるようにする (Orchestrator互換)
+    def get(self, key: str, default: Any = None) -> Any:
+        return self.to_dict().get(key, default)
