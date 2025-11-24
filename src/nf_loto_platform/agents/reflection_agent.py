@@ -8,6 +8,7 @@ Reflection Agent implementation.
 1. 実験結果が成功か失敗かを判定する
 2. 過学習や未学習、予測区間の広すぎ/狭すぎなどの問題を診断する
 3. 次回のイテレーションに向けた具体的な改善案（パラメータ変更など）を提示する
+4. ビジネス指標（方向正解率、最大ドローダウン等）を含めた多面的な評価を行う
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ class ReflectionAgent:
         self.name = self.agent_config.get("name", "ResultReflector")
         self.system_prompt = self.agent_config.get(
             "system_prompt", 
-            "You are a QA specialist. Evaluate the forecasting model performance."
+            "You are a QA specialist. Evaluate the forecasting model performance from both technical and business perspectives."
         )
 
     def evaluate(
@@ -110,12 +111,12 @@ class ReflectionAgent:
         )
 
         # 6. 終了判定の解析
-        # LLMの出力に "SATISFIED" または "STOP LOOP" が含まれていれば終了とするルール、
-        # あるいは JSON形式で出力させるのが確実だが、ここでは簡易的にテキスト解析する。
         is_satisfied = False
         
-        # ルールベースの強制終了条件 (例: score が非常に良い、あるいはNaN)
-        if current_score < 1e-5: # 完全一致に近い
+        # ルールベースの強制終了条件
+        # 方向正解率が極めて高い、または誤差が極小
+        da = metrics.get("directional_accuracy", 0)
+        if current_score < 1e-5 or da > 0.95: 
             is_satisfied = True
         
         # LLMの判定を優先
@@ -124,11 +125,9 @@ class ReflectionAgent:
             
         # 履歴からの判断: 連続して改善が見られない場合
         if len(history) >= 2:
-            # 直近2回が改善していないなら諦める
             last_scores = [h["score"] for h in history[-2:]]
             if all(s <= current_score for s in last_scores):
                  logger.info(f"[{self.name}] Detection stagnation. Suggesting stop.")
-                 # ここでは自動的にTrueにはせず、LLMに委ねるが、Critiqueに含めるべき
 
         logger.info(f"[{self.name}] Evaluation done. Satisfied={is_satisfied}")
         return response_text, is_satisfied
@@ -136,6 +135,7 @@ class ReflectionAgent:
     def _diagnose_issues(self, metrics: Dict[str, float], uncertainty: Dict[str, Any]) -> List[str]:
         """
         メトリクスから典型的な問題を診断する。
+        MAEだけでなく、Directional AccuracyやCoverageも考慮する。
         """
         issues = []
         
@@ -147,18 +147,30 @@ class ReflectionAgent:
             if val_loss > train_loss * 2.0:
                 issues.append(f"Potential Overfitting: Validation loss ({val_loss:.4f}) is much higher than training loss ({train_loss:.4f}). Suggest increasing regularization (dropout, weight_decay).")
         
-        # 2. 不確実性チェック (Conformal Prediction)
-        # uncertainty_metrics: {'score': float, 'coverage_rate': float, ...}
+        # 2. 方向正解率 (Directional Accuracy) の評価
+        da = metrics.get("directional_accuracy")
+        if da is not None:
+            if da < 0.5:
+                issues.append(f"Critical: Directional Accuracy ({da:.2f}) is worse than random guess. Model captures trend incorrectly.")
+            elif da < 0.6:
+                issues.append(f"Weak Trend Capture: Directional Accuracy ({da:.2f}) is low. Consider using trend-aware models like DLinear.")
+
+        # 3. 最大ドローダウン (Max Drawdown) - リスク評価
+        mdd = metrics.get("max_drawdown")
+        if mdd is not None and mdd > 0.5: # 50%以上の下落予測
+             issues.append(f"High Risk Forecast: Predicted Max Drawdown is {mdd:.2f}. Verify if this matches historical volatility.")
+
+        # 4. 不確実性チェック (Conformal Prediction Coverage)
         coverage = uncertainty.get("coverage_rate")
         if coverage is not None:
             target_coverage = 0.9 # 仮定
             if coverage < target_coverage - 0.15:
-                issues.append(f"Under-confident: Actual coverage ({coverage:.2f}) is significantly lower than target ({target_coverage}). Prediction intervals are too narrow.")
+                issues.append(f"Under-confident: Actual coverage ({coverage:.2f}) is significantly lower than target ({target_coverage}). Prediction intervals are too narrow (Risk of unexpected outliers).")
             elif coverage > target_coverage + 0.09:
                 issues.append(f"Over-confident: Actual coverage ({coverage:.2f}) is too high. Prediction intervals are uselessly wide.")
 
-        # 3. 異常値チェック (極端なLoss)
-        if metrics.get("mae", 0) > 10000: # データのスケールによるが...
+        # 5. 異常値チェック (極端なLoss)
+        if metrics.get("mae", 0) > 10000: 
             issues.append("Suspiciously high error. Check if data normalization is working correctly.")
 
         return issues
@@ -173,16 +185,28 @@ class ReflectionAgent:
         comparison: str,
         goal_metric: str
     ) -> str:
-        """LLM向けプロンプトを作成."""
+        """LLM向けプロンプトを作成. ビジネス指標を強調して提示する."""
         
         diagnosis_str = "\n".join([f"- {d}" for d in diagnosis]) if diagnosis else "- No obvious technical issues detected."
         
+        # ビジネス関連メトリクスの抽出
+        biz_metrics = {
+            "Directional Accuracy": metrics.get("directional_accuracy", "N/A"),
+            "Max Drawdown": metrics.get("max_drawdown", "N/A"),
+            "Sharpe Ratio": metrics.get("sharpe_ratio", "N/A")
+        }
+
         prompt = f"""
 ## Experiment Result
 - **Model**: {model_name}
 - **Goal Metric ({goal_metric})**: {metrics.get(goal_metric, 'N/A')}
-- **Other Metrics**: {json.dumps({k:v for k,v in metrics.items() if k != goal_metric}, indent=2)}
-- **Uncertainty/Coverage**: {json.dumps(uncertainty, indent=2)}
+- **Standard Metrics**: {json.dumps({k:v for k,v in metrics.items() if k not in ['directional_accuracy', 'max_drawdown', 'sharpe_ratio'] and k != goal_metric}, indent=2)}
+
+## Business & Risk Metrics
+{json.dumps(biz_metrics, indent=2)}
+
+## Uncertainty & Coverage
+{json.dumps(uncertainty, indent=2)}
 
 ## Hyperparameters Used
 {json.dumps(params, indent=2)}
@@ -190,18 +214,23 @@ class ReflectionAgent:
 ## Comparison with History
 {comparison}
 
-## Technical Diagnosis (Rule-based)
+## Automated Diagnosis
 {diagnosis_str}
 
 ## Your Task (Critique)
-1. **Assess Performance**: Is this model performing well? Is the error acceptable?
-2. **Validate Strategy**: Did the chosen model/parameters work as expected?
-3. **Suggest Improvements**: What should be changed in the next iteration? 
-   - Examples: "Increase input_size", "Switch to TSFM (Zero-shot) due to overfitting", "Add exogenous variables".
-4. **Decision**: Should we continue optimizing or stop? 
-   - If the result is good enough or improvements are unlikely, say "SATISFIED".
-   - Otherwise, provide a specific plan for the next step.
+You are a Senior Data Scientist evaluating this time series model.
+1. **Performance Assessment**:
+   - Is the error ({goal_metric}) acceptable?
+   - **Crucial**: Does the model predict the direction correctly? (See Directional Accuracy)
+   - Is the predicted risk (Drawdown) reasonable?
+2. **Strategy Validation**: Did the chosen model/parameters work?
+3. **Actionable Improvements**: What specific parameters or model types should be tried next?
+   - If Directional Accuracy is low, suggest trend-focused models or features.
+   - If Overfitting, suggest regularization.
+4. **Go/No-Go Decision**: 
+   - If metrics are satisfactory for deployment, conclude with "SATISFIED".
+   - Otherwise, propose the next experiment.
 
-Please keep your response concise and actionable.
+Please ensure your feedback addresses both accuracy (MAE/RMSE) and business utility (Direction, Risk).
 """
         return prompt
