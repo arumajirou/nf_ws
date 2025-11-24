@@ -1,7 +1,12 @@
 """
 PostgreSQL 上の nf_loto% テーブルにアクセスするためのユーティリティ。
 
-- nf_loto% テーブル構成の想定:
+主な機能:
+- データセット一覧、ID一覧の取得
+- 学習用パネルデータのロード (NeuralForecast形式)
+- RAG用: 過去の類似パターン検索
+
+テーブル構成の想定:
     - loto:       TEXT      (ロト種別)
     - num:        INTEGER   (回号)
     - ds:         DATE/TIMESTAMP (日付)
@@ -107,12 +112,26 @@ def load_panel_by_loto(
         df = pd.read_sql(query, conn, params=params)
 
     # NeuralForecast の標準カラム名が揃っているか軽くチェック
-    required_cols = {"unique_id", "ds", "y"}
-    missing = required_cols.difference(df.columns)
-    if missing:
-        raise ValueError(f"必要なカラムが不足しています: {missing}")
+    if not df.empty:
+        required_cols = {"unique_id", "ds", "y"}
+        missing = required_cols.difference(df.columns)
+        if missing:
+            # データが存在するのに必須カラムがない場合はエラー
+            raise ValueError(f"必要なカラムが不足しています: {missing}")
+            
+        # dsをdatetime型に強制変換
+        if "ds" in df.columns:
+            df["ds"] = pd.to_datetime(df["ds"])
+        
+        # yを数値型に強制変換
+        if "y" in df.columns:
+            df["y"] = pd.to_numeric(df["y"], errors='coerce')
 
     return df
+
+
+# model_runner.py との互換性のためのエイリアス
+load_panel_data = load_panel_by_loto
 
 
 def search_similar_patterns(
@@ -154,35 +173,34 @@ def search_similar_patterns(
     with get_connection() as conn:
         df_hist = pd.read_sql(query, conn, params=[loto, unique_id])
     
-    if df_hist.empty:
+    # カラムが無い、データが無い場合の空返し
+    if df_hist.empty or "y" not in df_hist.columns:
         return pd.DataFrame(columns=["ds", "similarity", "next_val", "window_values"])
     
     # 2. スライディングウィンドウによる検索 (Python側で実行)
     # Note: データ量が膨大な場合は pgvector 等の利用を検討すべきだが、
     # ロト/ナンバーズ程度のデータ量(数千~数万行)であれば numpy で十分高速。
     
-    y_hist = df_hist["y"].to_numpy(dtype=float)
-    ds_hist = df_hist["ds"].to_numpy()
+    y_hist = pd.to_numeric(df_hist["y"], errors='coerce').fillna(0).to_numpy(dtype=float)
+    ds_hist = pd.to_datetime(df_hist["ds"]).to_numpy()
     
     q_len = len(query_seq)
     q_vec = np.array(query_seq, dtype=float)
     
+    # 検索には「クエリ長 + 直後の1点」が必要
     if len(y_hist) < q_len + 1:
-        # データ不足
         return pd.DataFrame(columns=["ds", "similarity", "next_val", "window_values"])
 
     results = []
     
-    # 履歴を走査 (未来の値を1つ確保するため -1)
-    # query_seq 自身が含まれている場合(直近データ)、それは検索結果から除外すべきだが、
-    # ここでは単純に全走査し、後処理でフィルタリングするか、呼び出し側で判断する。
-    # 今回は学習データとしての利用を想定し、予測対象時点(未来)を含まない範囲をスキャン。
+    # 履歴を走査
+    # 最後のウィンドウは、その「次(未来)」がデータセット内に存在する必要があるため
+    # ループ範囲は len(y_hist) - q_len まで (スライスは i+q_len を参照、next_valは i+q_len を参照)
+    # i + q_len < len(y_hist) である必要がある -> i < len(y_hist) - q_len
     
     for i in range(len(y_hist) - q_len):
         # ウィンドウ切り出し
         window = y_hist[i : i + q_len]
-        next_val = y_hist[i + q_len]
-        match_date = ds_hist[i + q_len - 1] # パターン終了日
         
         # 距離計算 (Euclidean Distance)
         dist = np.linalg.norm(window - q_vec)
@@ -190,6 +208,12 @@ def search_similar_patterns(
         # 類似度へ変換 (距離0 -> 1.0, 距離大 -> 0.0)
         # 正規化定数はデータのスケールに依存するが、簡易的に 1 / (1 + dist) を使用
         similarity = 1.0 / (1.0 + dist)
+        
+        # next_val (パターンの直後の値)
+        next_val = y_hist[i + q_len]
+        
+        # match_date (パターン終了日)
+        match_date = ds_hist[i + q_len - 1] 
         
         results.append({
             "ds": match_date,
