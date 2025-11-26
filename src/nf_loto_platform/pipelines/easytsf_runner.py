@@ -421,3 +421,33 @@ def run_easytsf(
         meta["tag"] = tag
         
     return outcome, report, meta
+
+
+def main():
+    """CLI Entry point."""
+    import argparse
+    import sys
+    
+    parser = argparse.ArgumentParser(description="Run EasyTSF Pipeline")
+    parser.add_argument("--config", type=str, required=True, help="Path to config file (json/yaml)")
+    parser.add_argument("--tag", type=str, help="Optional tag for the run")
+    
+    args = parser.parse_args()
+    
+    try:
+        cfg = EasyTSFConfig.from_file(args.config)
+        outcome, report, meta = run_easytsf(cfg, tag=args.tag)
+        
+        print(f"--- Execution Completed ---")
+        print(f"Status: {report.conclusion}")
+        print(f"Best Model: {outcome.best_model_name}")
+        print(f"Run IDs: {outcome.run_ids}")
+        
+    except Exception as e:
+        logger.error(f"Failed to run pipeline: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    main()

@@ -49,6 +49,15 @@ dev = [
   "mypy",
 ]
 
+[tool.pytest.ini_options]
+markers = [
+    "e2e: End-to-end tests",
+    "integration: Integration tests",
+    "nonfunctional: Non-functional tests (performance, etc.)",
+    "slow: Slow running tests",
+]
+
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 

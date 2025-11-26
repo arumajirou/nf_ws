@@ -1,0 +1,87 @@
+Python basics
+
+pycache/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+Virtual Environments
+
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+Configuration / Secrets (Templates are committed, actual configs are ignored)
+
+config/db.yaml
+config/loto_db_config.yaml
+.env
+
+Logs and Databases
+
+*.log
+*.sql
+*.sqlite
+
+PyTorch Lightning
+
+lightning_logs/
+
+Project Specific Artifacts
+
+artifacts/*
+!artifacts/.gitkeep
+
+Reports and Generated Files
+
+report/.html
+report/.log
+report/auto_maintenance_report.md
+report/repository_audit.md
+report/change_history_*.md
+
+Editor / IDE
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+
+Testing
+
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+OS generated files
+
+.DS_Store
+Thumbs.db
+
+Temporary files
+
+*.zip
