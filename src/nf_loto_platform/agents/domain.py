@@ -42,3 +42,20 @@ class ExperimentRecipe:
     # 辞書のようにアクセスできるようにする (Orchestrator互換)
     def get(self, key: str, default: Any = None) -> Any:
         return self.to_dict().get(key, default)
+
+@dataclass
+class ExperimentOutcome:
+    """実験結果のまとめ (Forecaster -> Reporter)."""
+    best_model_name: str
+    metrics: Dict[str, float]
+    all_model_metrics: Dict[str, Dict[str, float]]
+    run_ids: List[str]
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
+class AgentReport:
+    """エージェントによる分析レポート."""
+    summary: str
+    details_markdown: str
+    recommended_actions: List[str]
+    artifacts: Dict[str, str] = field(default_factory=dict)

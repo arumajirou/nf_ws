@@ -38,6 +38,14 @@ class TSFMCapabilities:
 
 
 @dataclass
+class CostEstimate:
+    """推論・学習にかかるコスト見積もり."""
+    estimated_cost: float = 0.0
+    currency: str = "USD"
+    details: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class ForecastResult:
     """予測結果を保持するコンテナ."""
     yhat: pd.DataFrame                  # 予測結果 (unique_id, ds, {model_name}, ...)

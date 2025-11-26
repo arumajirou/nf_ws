@@ -172,3 +172,73 @@ When in doubt for **new** commands not documented here, ask for clarification on
    # To run:
    #   pytest tests/features/test_loto_etl.py -q
    ```
+
+## Full Auto Cycle Agent: `Run full auto cycle`
+
+### トリガー条件
+
+ユーザーがこのリポジトリで、次の行を単独で入力したとき:
+
+```text
+Run full auto cycle
+```
+
+### 期待する挙動
+
+1. リポジトリ状態の確認
+
+   - `git status -sb` などの読み取り専用コマンドを実行し、未コミット変更の有無を確認する。
+   - 未コミット変更が多い場合は、短く警告を出しつつ処理を続行する。
+
+2. 静的チェックとテスト実行
+
+   - 事前承認された品質チェックコマンドを自動で実行する（例: `python -m pip install -e .[dev]`, `pytest -m "not (integration or e2e or nonfunctional)"`）。
+   - 失敗した場合はログを収集し、後続ステップのレポートに反映する。
+
+3. 自動改修フェーズ
+
+   - テスト失敗や Lint エラーを手がかりに、該当モジュールを開き必要最小限の修正を行う。
+   - 破壊的変更は避け、型ヒントやドキュメント改善、明らかなバグ修正に限定する。
+   - 外部サービスや本番 DB に影響するコードは変更しない。
+
+4. 再テスト
+
+   - 修正後、同じ pytest コマンドを再実行する。
+   - 失敗テストが残っている場合は、その一覧と代表的なスタックトレースを日本語で要約する。
+
+5. 結果報告
+
+   - 日本語で以下を含む短いサマリーを出力する:
+     - 変更したファイル一覧
+     - 実行したコマンド一覧
+     - テストの結果（成功/失敗数）
+     - 既知の制約や TODO
+
+6. 改修履歴書の作成
+
+   - `report/` 配下に `change_history_YYYYMMDD_HHMM.md` を新規作成し、以下の項目を埋める:
+     - 変更日時・担当（Codex Agent）
+     - 対象チケット/課題（わかる範囲で）
+     - 変更概要（Before/After）
+     - 実行コマンドと結果
+     - 残課題・リスク
+   - テンプレートが存在する場合はそれに従う（例: `docs/change_history_template.md`）。
+
+### 出力制約
+
+- 実行ログ全文は出さず、要約のみを出力する。
+- 「了解しました」「これから実行します」などのプランニング文は書かない。
+- 例外的なエラーで途中終了する場合のみ、簡潔な理由を先頭に書く。
+
+### 承認済みコマンド
+
+このコマンドの実行中に、追加の確認なしで自動的に実行してよいコマンドは次の通りとする:
+
+- `git status`
+- `python -m pip install -e .[dev]`
+- `pytest -m "not (integration or e2e or nonfunctional)"`
+- `pytest tests/e2e`（必要に応じて）
+- フォーマッタ / 静的解析 (`black`, `isort`, `mypy` など)
+
+破壊的な操作（`git reset --hard`, DB マイグレーションなど）は、このコマンドでは実行してはならない。
+

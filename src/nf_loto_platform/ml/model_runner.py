@@ -43,7 +43,8 @@ except ImportError:
 
 # NeuralForecast 関連のインポート
 from neuralforecast import NeuralForecast
-from neuralforecast.models import AutoNHITS, AutoTFT, NBEATS, NHITS
+from neuralforecast.auto import AutoNHITS, AutoTFT
+from neuralforecast.models import NBEATS, NHITS
 
 # プロジェクト内モジュールのインポート
 # ---------------------------------------------------------------------------

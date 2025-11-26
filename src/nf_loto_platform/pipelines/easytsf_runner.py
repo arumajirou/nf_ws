@@ -11,7 +11,9 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
 
 import pandas as pd
 import yaml
@@ -37,6 +39,12 @@ except ImportError:
     RagAgent = None
     PlannerAgent = None
     ReflectionAgent = None
+
+try:
+    from nf_loto_platform.agents.ts_research_orchestrator import TSResearchOrchestrator
+except ImportError:
+    TSResearchOrchestrator = None
+
 
 logger = logging.getLogger(__name__)
 
@@ -331,3 +339,85 @@ class AgentOrchestrator:
             return loto_repository.load_panel_data(table_name, loto, list(unique_ids))
         except Exception:
             return pd.DataFrame()
+
+
+@dataclass
+class EasyTSFConfig:
+    """EasyTSF 互換の設定クラス."""
+    raw: Dict[str, Any]
+
+    @classmethod
+    def from_file(cls, path: Union[str, Path]) -> EasyTSFConfig:
+        import json
+        with open(path, "r", encoding="utf-8") as f:
+            return cls(raw=json.load(f))
+
+    @property
+    def dataset(self) -> Dict[str, Any]:
+        return self.raw.get("dataset", {})
+
+    @property
+    def experiment(self) -> Dict[str, Any]:
+        return self.raw.get("experiment", {})
+
+    @property
+    def strategy(self) -> Dict[str, Any]:
+        return self.raw.get("strategy", {})
+
+
+def run_easytsf(
+    cfg: EasyTSFConfig, 
+    tag: Optional[str] = None
+) -> Tuple[ExperimentOutcome, AgentReport, Dict[str, Any]]:
+    """EasyTSF スタイルの実行エントリポイント."""
+    
+    # 設定からパラメータ抽出
+    table_name = cfg.dataset.get("table", "nf_loto_panel")
+    loto = cfg.dataset.get("loto", "loto6")
+    unique_ids = cfg.dataset.get("unique_ids", [])
+    if not unique_ids:
+        raise ValueError("unique_ids must be specified in dataset config")
+        
+    horizon = cfg.experiment.get("horizon", 28)
+    objective = cfg.experiment.get("objective", "mae")
+    
+    # オーケストレーターの構築
+    # ここでは簡易的にデフォルト構成を使用
+    base_orch = AgentOrchestrator()
+    
+    if TSResearchOrchestrator is None:
+        # フォールバック: ログ機能なしで実行
+        logger.warning("TSResearchOrchestrator not found. Running without research logging.")
+        task = TimeSeriesTaskSpec(
+            loto_kind=loto,
+            target_horizon=horizon,
+            objective_metric=objective
+        )
+        outcome, report = base_orch.run_full_cycle(
+            task=task,
+            table_name=table_name,
+            loto=loto,
+            unique_ids=unique_ids
+        )
+        meta = {"status": "no_logging"}
+    else:
+        # TSResearchOrchestrator でラップ (ログ記録のため)
+        ts_orch = TSResearchOrchestrator(base_orchestrator=base_orch)
+        
+        task = TimeSeriesTaskSpec(
+            loto_kind=loto,
+            target_horizon=horizon,
+            objective_metric=objective
+        )
+        
+        outcome, report, meta = ts_orch.run_full_cycle_with_logging(
+            task=task,
+            table_name=table_name,
+            loto=loto,
+            unique_ids=unique_ids
+        )
+    
+    if tag:
+        meta["tag"] = tag
+        
+    return outcome, report, meta

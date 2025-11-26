@@ -8,7 +8,7 @@ import numpy as np
 from .base import BaseTSFMAdapter, ForecastResult, TSFMCapabilities
 
 
-class ChronosAdapter(BaseTSFMAdapter):
+class Chronos2ZeroShotAdapter(BaseTSFMAdapter):
     """amazon/chronos-2 ファミリ向けの軽量アダプタ.
 
     テスト環境では外部ライブラリを要求しない last-value コピー戦略で
